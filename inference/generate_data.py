@@ -1,24 +1,18 @@
 from datasets import load_dataset
 from transformers import pipeline
-import pyarrow
 import argparse
 import torch
 import time
 
-DATA_PATH = "datasets/"
 
-
-def generate_data(dataset, pipe, num_outputs):
+def generate_data(dataset, pipe, num_outputs, output_dir):
     for i in range(num_outputs):
         dataset[i]["text"] = "This is what you will do: \n" + \
             dataset[i]["text"]
         dataset[i]["output"] = pipe(dataset[i]["input"])[0]["generated_text"]
+
+    dataset.save_to_disk(output_dir)
     return dataset
-
-
-def save_data(dataset, output_file):
-    table = pyarrow.Table.from_pydict(dataset)
-    pyarrow.parquet.write_table(table, DATA_PATH + output_file)
 
 
 def main(args):
@@ -32,12 +26,11 @@ def main(args):
     dataset = dataset.skip(args.skip_num_examples)
 
     pipe = pipeline("text-generation", model=args.model,
-                    torch_dtype=torch.bfloat16)
+                    torch_dtype=torch.bfloat16, device_map='auto')
 
-    dataset = generate_data(dataset, pipe, args.num_generated_outputs)
+    output_dir = f"{args.output_dir}/{args.dataset}_{args.skip_num_examples}_{args.skip_num_examples + args.num_outputs}"
 
-    output_file = args.num_generated_outputs + time.strftime("%H%M%S")
-    save_data(dataset, output_file)
+    dataset = generate_data(dataset, pipe, args.num_outputs, output_dir)
 
 
 if __name__ == "__main__":
@@ -45,9 +38,12 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="wikipedia")
     parser.add_argument("--model", type=str,
                         default="meta-llama/Llama-2-7b-hf")
-    parser.add_argument("--num_generated_outputs", type=int, default=1024)
+    parser.add_argument("--num_outputs", type=int,
+                        default=1024, help="Number of examples to generate")
     parser.add_argument("--skip_num_examples", type=int,
                         help="Number of examples to skip if you have already generated examples with the first n data already", default=0)
+    parser.add_argument("--output_dir", type=str,
+                        help="Directory to save the generated data to", default="datasets/generated_data")
 
     args = parser.parse_args()
     main(args)
