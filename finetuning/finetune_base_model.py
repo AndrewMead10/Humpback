@@ -24,7 +24,7 @@ def filter_oasst_dataset(dataset):
     return new_dataset
 
 
-def tokenize_and_mask(examples, tokenizer=None):
+def tokenize_and_mask(examples, tokenizer):
     """
     Tokenizes combined prompt and response and generates attention masks so that we only attend to the response.
 
@@ -79,9 +79,9 @@ def main(args):
     dataset = filter_oasst_dataset(dataset)
 
     # use partial to pass tokenizer to tokenize_and_mask
-    tokenize_and_mask = partial(tokenize_and_mask, tokenizer=tokenizer)
+    partial_tokenize_and_mask = partial(tokenize_and_mask, tokenizer=tokenizer)
 
-    dataset = dataset.map(tokenize_and_mask, batched=True)
+    dataset = dataset.map(partial_tokenize_and_mask, batched=True)
 
     train_dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=4, shuffle=True, num_workers=4, pin_memory=True)
@@ -94,7 +94,7 @@ def main(args):
     training_args = TrainingArguments(
         output_dir="./finetuned_model",
         overwrite_output_dir=True,
-        num_steps=500,
+        max_steps=500,
         per_device_train_batch_size=per_device_bs,
         gradient_accumulation_steps=1,
         learning_rate=1e-5,

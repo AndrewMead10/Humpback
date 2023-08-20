@@ -2,7 +2,6 @@ from datasets import load_dataset
 from transformers import pipeline
 import argparse
 import torch
-import time
 
 
 def generate_data(dataset, pipe, num_outputs, output_dir):
