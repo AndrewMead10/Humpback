@@ -5,6 +5,9 @@ from tqdm import tqdm
 from functools import partial
 import argparse
 
+from accelerate import FullyShardedDataParallelPlugin, Accelerator
+from torch.distributed.fsdp.fully_sharded_data_parallel import FullOptimStateDictConfig, FullStateDictConfig
+
 
 def filter_oasst_dataset(dataset):
     new_dataset = {"instruction": [], "output": []}
@@ -67,11 +70,15 @@ def tokenize_and_mask(examples, tokenizer):
 
 
 def main(args):
+
+    accelerator = Accelerator()
     model_name = args.model_name
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float16)
+    model = accelerator.prepare(model)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
@@ -83,8 +90,8 @@ def main(args):
 
     dataset = dataset.map(partial_tokenize_and_mask, batched=True)
 
-    train_dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=4, shuffle=True, num_workers=4, pin_memory=True)
+    print(dataset)
+    print(len(dataset))
 
     num_devices = torch.cuda.device_count()
     bs = 32
@@ -102,7 +109,6 @@ def main(args):
         warmup_steps=100,
         fp16=True,
         tf32=True,
-        fsdp=["full_shard"] if num_devices > 1 else "",
         torch_compile=True,
         save_steps=250,
         save_total_limit=1,
@@ -113,7 +119,7 @@ def main(args):
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataloader,
+        train_dataset=dataset,
         tokenizer=tokenizer
     )
 
