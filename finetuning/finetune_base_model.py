@@ -5,8 +5,7 @@ from tqdm import tqdm
 from functools import partial
 import argparse
 
-from accelerate import FullyShardedDataParallelPlugin, Accelerator
-from torch.distributed.fsdp.fully_sharded_data_parallel import FullOptimStateDictConfig, FullStateDictConfig
+from accelerate import Accelerator
 
 
 def filter_oasst_dataset(dataset):
@@ -89,9 +88,7 @@ def main(args):
     partial_tokenize_and_mask = partial(tokenize_and_mask, tokenizer=tokenizer)
 
     dataset = dataset.map(partial_tokenize_and_mask, batched=True)
-
-    print(dataset)
-    print(len(dataset))
+    dataset = dataset.remove_columns(["instruction", "output"])
 
     num_devices = torch.cuda.device_count()
     bs = 32
@@ -114,6 +111,7 @@ def main(args):
         save_total_limit=1,
         report_to="wandb",
         run_name="oasst finetune",
+        remove_unused_columns=False,
     )
 
     trainer = Trainer(
