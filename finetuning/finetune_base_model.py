@@ -26,16 +26,11 @@ def filter_oasst_dataset(dataset):
     return new_dataset
 
 
-def tokenize_and_mask(examples, tokenizer):
-    """
-    Tokenizes combined prompt and response and generates attention masks so that we only attend to the response.
+def tokenize_and_mask(examples, tokenizer, tune_on_output):
+    # tune_on_output: if True, only attend to the output and ignore the instruction, if False, only attend to the instruction and ignore the output
 
-    Args:
-    - examples (dict): Dictionary with keys 'instruction' and 'output' containing lists of strings.
-
-    Returns:
-    - List of dictionaries containing tokenized 'input_ids' and 'attention_mask' for each combined string.
-    """
+    examples['instruction'] = [instruction +
+                               " Answer in the style of an AI Assistant." for instruction in examples['instruction']]
 
     combined_texts = [prompt + ' ' + response for prompt,
                       response in zip(examples['instruction'], examples['output'])]
@@ -43,25 +38,21 @@ def tokenize_and_mask(examples, tokenizer):
     # Tokenize the combined texts and responses
     encoding = tokenizer(combined_texts, truncation=True,
                          padding=True, return_tensors="pt")
-    response_encodings = tokenizer(
-        examples['output'], truncation=True, padding=True, return_tensors="pt", add_special_tokens=False)
+    instruction_encodings = tokenizer(
+        examples['instruction'], truncation=True, padding=True, return_tensors="pt", add_special_tokens=False)
 
-    response_lengths = torch.tensor(
-        [len(enc) for enc in response_encodings['input_ids']])
+    instruction_lengths = torch.Tensor(
+        [len(enc) for enc in instruction_encodings['input_ids']])
 
-    # Calculate mask_start_positions (adjust for [CLS] and [SEP] tokens by adding 2 to the offset)
-    mask_start_positions = encoding['attention_mask'].sum(
-        dim=1) - response_lengths + 1
+    # only attent to the instruction and ignore the response
+    mask = torch.arange(
+        encoding['attention_mask'].size(1)).unsqueeze(0) < instruction_lengths.unsqueeze(-1)
 
-    # Use the original attention mask and update it
-    idx_matrix = torch.arange(encoding['attention_mask'].size(
-        1)).unsqueeze(0).to(mask_start_positions.device)
-    mask_update = (idx_matrix < mask_start_positions.unsqueeze(1)).long()
+    if tune_on_output:
+        mask = ~mask
 
-    # Only update the mask where necessary
-    encoding['attention_mask'] *= mask_update
+    encoding['attention_mask'] = mask * encoding['attention_mask']
 
-    # Convert tensors to lists
     encoding['input_ids'] = encoding['input_ids'].tolist()
     encoding['attention_mask'] = encoding['attention_mask'].tolist()
 
@@ -75,9 +66,9 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.float16)
-    model = accelerator.prepare(model)
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_name, torch_dtype=torch.float16)
+    # model = accelerator.prepare(model)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
@@ -85,7 +76,8 @@ def main(args):
     dataset = filter_oasst_dataset(dataset)
 
     # use partial to pass tokenizer to tokenize_and_mask
-    partial_tokenize_and_mask = partial(tokenize_and_mask, tokenizer=tokenizer)
+    partial_tokenize_and_mask = partial(
+        tokenize_and_mask, tokenizer=tokenizer, tune_on_output=args.tune_on_output)
 
     dataset = dataset.map(partial_tokenize_and_mask, batched=True)
     dataset = dataset.remove_columns(["instruction", "output"])
@@ -128,5 +120,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str,
                         default="meta-llama/Llama-2-7b-hf")
+    parser.add_argument("--tune_on_output", action="store_true")
     args = parser.parse_args()
     main(args)
