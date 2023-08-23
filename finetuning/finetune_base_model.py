@@ -66,9 +66,9 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     model_name, torch_dtype=torch.float16)
-    # model = accelerator.prepare(model)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float16)
+    model = accelerator.prepare(model)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
