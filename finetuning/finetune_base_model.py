@@ -101,6 +101,7 @@ def main(args):
         gradient_accumulation_steps=per_device_bs,
         learning_rate=1e-5,
         lr_scheduler_type="linear",
+        dataloader_num_workers=20,
         warmup_steps=100,
         fp16=True,
         tf32=True,
