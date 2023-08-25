@@ -10,7 +10,6 @@ from accelerate import Accelerator
 
 def filter_oasst_dataset(dataset):
     new_dataset = {"instruction": [], "output": []}
-    print("getting first turns")
     for i in tqdm(range(len(dataset))):
         if dataset[i]["parent_id"] == None:
             child = dataset[i+1]
@@ -22,7 +21,7 @@ def filter_oasst_dataset(dataset):
     # convert dict to hf dataset
     new_dataset = Dataset.from_dict(new_dataset)
     # should be ~3200
-    print(len(new_dataset))
+    print(f"length of dataset: {len(new_dataset)}")
     return new_dataset
 
 
@@ -41,8 +40,9 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
     instruction_encodings = tokenizer(
         examples['instruction'], truncation=True, padding=True, return_tensors="pt", add_special_tokens=False)
 
+    # add one to account for the BOS token at the start of the instruction
     instruction_lengths = torch.Tensor(
-        [len(enc) for enc in instruction_encodings['input_ids']])
+        [len(enc)+1 for enc in instruction_encodings['input_ids']])
 
     # only attent to the instruction and ignore the response
     mask = torch.arange(
@@ -51,10 +51,16 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
     if tune_on_output:
         mask = ~mask
 
-    encoding['attention_mask'] = mask * encoding['attention_mask']
+    # Create a tensor of -100s with the same shape as encoding['input_ids']
+    negative_ones = torch.full_like(encoding['input_ids'], -100)
+
+    # Use the mask to replace the values of encoding['input_ids'] where the mask is 0
+    encoding['labels'] = torch.where(
+        mask, encoding['input_ids'], negative_ones)
 
     encoding['input_ids'] = encoding['input_ids'].tolist()
     encoding['attention_mask'] = encoding['attention_mask'].tolist()
+    encoding['labels'] = encoding['labels'].tolist()
 
     return encoding
 
@@ -66,9 +72,9 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.float16)
-    model = accelerator.prepare(model)
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_name, torch_dtype=torch.float16)
+    # model = accelerator.prepare(model)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
