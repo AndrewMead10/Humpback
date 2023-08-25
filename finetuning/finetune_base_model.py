@@ -110,6 +110,9 @@ def main(args):
         report_to="wandb",
         run_name="oasst finetune",
         remove_unused_columns=False,
+        push_to_hub=True,
+        hub_model_id="Llama-2-OASST-First-Turn-Instruction-Only",
+        hub_strategy="every_save",
     )
 
     trainer = Trainer(
