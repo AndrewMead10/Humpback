@@ -4,6 +4,7 @@ import torch
 from tqdm import tqdm
 from functools import partial
 import argparse
+from custom_trainer import CustomTrainer
 
 from accelerate import Accelerator
 
@@ -116,7 +117,7 @@ def main(args):
         hub_strategy="every_save",
     )
 
-    trainer = Trainer(
+    trainer = CustomTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
