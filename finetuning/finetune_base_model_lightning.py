@@ -8,13 +8,25 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from functools import partial
 from huggingface_hub import PyTorchModelHubMixin
+from bitsandbytes.optim import GlobalOptimManager, Adam
+
+# command for deepespeed
+# sudo apt install nvidia-cuda-toolkit
+# ps -aux|grep python to find instances to kill
 
 
 class FinetuneBaseModel(pl.LightningModule, PyTorchModelHubMixin):
     def __init__(self, model_name, lr, num_training_steps):
         super().__init__()
         self.model = AutoModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.bfloat16, device='cuda:0')
+            model_name, torch_dtype=torch.bfloat16)
+
+        # convert for training with adam8bit
+        for module in self.model.modules():
+            if isinstance(module, torch.nn.Embedding):
+                GlobalOptimManager.get_instance().register_module_override(
+                    module, 'weight', {'optim_bits': 32})
+
         self.lr = lr
         self.num_training_steps = num_training_steps
 
@@ -34,8 +46,8 @@ class FinetuneBaseModel(pl.LightningModule, PyTorchModelHubMixin):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.lr, weight_decay=0.1)
+        optimizer = Adam(
+            self.parameters(), lr=self.lr, weight_decay=0.1, optim_bits=8)
 
         gamma = (self.lr-9e-6)/self.num_training_steps
         scheduler = torch.optim.lr_scheduler.StepLR(
@@ -129,8 +141,11 @@ class OASSTDatasetModule(pl.LightningDataModule):
 
 
 def main():
+    torch.backends.cuda.matmul.allow_tf32 = True
     model_name = "meta-llama/Llama-2-7b-hf"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
+
     batch_size = 4
     tune_on_output = False
     lr = 1e-5
@@ -142,8 +157,10 @@ def main():
     model = FinetuneBaseModel(
         model_name=model_name, lr=lr, num_training_steps=num_training_steps)
 
+    # model = torch.compile(model)
+
     logger = WandbLogger(
-        project="oasst1", name="finetune_base_model_lightning")
+        project="humpback base finetune", name="finetune_base_model_lightning")
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 

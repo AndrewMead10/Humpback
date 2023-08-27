@@ -5,3 +5,5 @@ accelerate
 sentencepiece
 wandb
 pytorch_lightning
+deepspeed
+bitsandbytes
