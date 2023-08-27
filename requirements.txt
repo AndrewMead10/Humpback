@@ -4,3 +4,4 @@ torch
 accelerate
 sentencepiece
 wandb
+pytorch_lightning
