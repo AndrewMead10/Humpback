@@ -34,10 +34,10 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
                       response in zip(examples['instruction'], examples['output'])]
 
     # Tokenize the combined texts and responses
-    encoding = tokenizer(combined_texts, truncation=True, max_length=2024,
+    encoding = tokenizer(combined_texts, truncation=True, max_length=1024,
                          padding=True, return_tensors="pt")
     instruction_encodings = tokenizer(
-        examples['instruction'], truncation=True, padding=True, return_tensors="pt", add_special_tokens=False)
+        examples['instruction'], truncation=True, max_length=1024, padding=True, return_tensors="pt", add_special_tokens=False)
 
     # add one to account for the BOS token at the start of the instruction
     instruction_lengths = torch.Tensor(
@@ -65,13 +65,12 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
 
 
 def main(args):
-
     model_name = args.model_name
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.float16)
+        model_name)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
