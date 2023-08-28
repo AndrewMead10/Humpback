@@ -1,12 +1,10 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer
+from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
 from datasets import load_dataset, Dataset
 import torch
 from tqdm import tqdm
 from functools import partial
 import argparse
 from custom_trainer import CustomTrainer
-
-from accelerate import Accelerator
 
 
 def filter_oasst_dataset(dataset):
@@ -36,7 +34,7 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
                       response in zip(examples['instruction'], examples['output'])]
 
     # Tokenize the combined texts and responses
-    encoding = tokenizer(combined_texts, truncation=True,
+    encoding = tokenizer(combined_texts, truncation=True, max_length=2024,
                          padding=True, return_tensors="pt")
     instruction_encodings = tokenizer(
         examples['instruction'], truncation=True, padding=True, return_tensors="pt", add_special_tokens=False)
@@ -68,14 +66,12 @@ def tokenize_and_mask(examples, tokenizer, tune_on_output):
 
 def main(args):
 
-    accelerator = Accelerator()
     model_name = args.model_name
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_name, torch_dtype=torch.float16)
-    model = accelerator.prepare(model)
 
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 

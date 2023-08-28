@@ -53,7 +53,7 @@ class FinetuneBaseModel(pl.LightningModule, PyTorchModelHubMixin):
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=1, gamma=gamma
         )
-        return optimizer, scheduler
+        return [optimizer], [scheduler]
 
 
 class OASSTDatasetModule(pl.LightningDataModule):
@@ -79,10 +79,10 @@ class OASSTDatasetModule(pl.LightningDataModule):
         self.dataset = dataset
 
     def train_dataloader(self):
-        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=20, pin_memory=True)
+        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=20, pin_memory=True, collate_fn=self.collate_fn)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=False, num_workers=20, pin_memory=True)
+        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=False, num_workers=20, pin_memory=True, collate_fn=self.collate_fn)
 
     def filter_oasst_dataset(self, dataset):
         new_dataset = {"instruction": [], "output": []}
@@ -139,6 +139,17 @@ class OASSTDatasetModule(pl.LightningDataModule):
 
         return encoding
 
+    def collate_fn(self, batch):
+        # Padding the input_ids and attention_masks using the tokenizer
+        # batch = self.tokenizer.pad(batch, padding='longest', return_tensors="pt")
+        batch[0]['input_ids'] = torch.tensor(
+            batch[0]['input_ids']).unsqueeze(0)
+        batch[0]['attention_mask'] = torch.tensor(
+            batch[0]['attention_mask']).unsqueeze(0)
+        batch[0]['labels'] = torch.tensor(batch[0]['labels']).unsqueeze(0)
+
+        return batch[0]
+
 
 def main():
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -146,10 +157,12 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
 
-    batch_size = 4
+    num_gpus = 4
+    batch_size = 1
     tune_on_output = False
     lr = 1e-5
     num_training_steps = 1000
+    grad_acc = 32/(batch_size * num_gpus)
 
     dataset_module = OASSTDatasetModule(
         tokenizer=tokenizer, batch_size=batch_size, tune_on_output=tune_on_output)
@@ -166,13 +179,13 @@ def main():
 
     trainer = pl.Trainer(
         accelerator='gpu',
-        devices=4,
-        strategy="deepspeed_stage_2",
+        devices=num_gpus,
+        strategy="deepspeed_stage_3",
         precision="bf16-mixed",
         logger=logger,
         max_steps=num_training_steps,
-        callbacks=[lr_monitor]
-
+        callbacks=[lr_monitor],
+        accumulate_grad_batches=grad_acc
     )
 
     trainer.fit(model, dataset_module)

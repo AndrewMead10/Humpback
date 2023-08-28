@@ -7,3 +7,4 @@ wandb
 pytorch_lightning
 deepspeed
 bitsandbytes
+scipy
